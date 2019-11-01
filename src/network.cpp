@@ -37,7 +37,7 @@ void Network::set_values(const std::vector<double> &_poten, const size_t start) 
 
 bool Network::add_link(const size_t &a, const size_t &b, double str) {
     if (a==b || a>=size() || b>=size() || str<1e-6) return false;
-    if (links.count({a,b})) return false;
+    if (links.count({a,b})) return false;    //d'ou vient cette methode ????
     if (neurons[b].is_inhibitory()) str *= -2.0;
     links.insert({{a,b}, str});
     return true;
@@ -62,6 +62,29 @@ size_t Network::random_connect(const double &mean_deg, const double &mean_streng
     return num_links;
 }
 
+std::pair<size_t, double> Network::degree(const size_t& n) const
+{	
+	std::vector<std::pair<size_t, double> > connected_neurons = neighbors(n);
+	double intensity (0);
+	for (size_t i(0); i<connected_neurons.size(); ++i)
+	{ 
+		intensity += connected_neurons[i].second;
+	}
+	return std::pair<size_t, double> (connected_neurons.size(), intensity);
+}
+
+std::vector<std::pair<size_t, double> > Network::neighbors(const size_t& n) const
+{
+	std::vector<std::pair<size_t, double>>connected_neurons;
+	for (std::map<std::pair<size_t, size_t>, double>::const_iterator it=links.lower_bound({n,0}); 
+	it!=links.end() and ((it->first).first ==n) ; ++it) 
+	{
+		std::pair<size_t, double> to_add((it->first).second, it->second);
+		connected_neurons.push_back(to_add);
+	}
+	return connected_neurons;
+}
+
 std::vector<double> Network::potentials() const {
     std::vector<double> vals;
     for (size_t nn=0; nn<size(); nn++)
@@ -74,6 +97,51 @@ std::vector<double> Network::recoveries() const {
     for (size_t nn=0; nn<size(); nn++)
         vals.push_back(neurons[nn].recovery());
     return vals;
+}
+
+std::set<size_t> Network::step(const std::vector<double>& t)
+{
+	std::set<size_t> firing_indexes;
+	for (size_t i=0; i<neurons.size(); ++i)
+	{
+		if (neurons[i].firing())
+		{
+			firing_indexes.insert(i);
+			neurons[i].reset();
+		}
+	}
+	for (size_t i(0); i<neurons.size(); ++i)
+	{
+		double intensity(0);
+		double thalamic (t[i]);
+		double add(0);
+		double remove (0);
+		if (neurons[i].is_inhibitory())
+		{
+			thalamic *=0.4;
+		}
+	
+		std::vector<std::pair<size_t, double>> connected_neurons = neighbors(i);
+		for (size_t j(0); j<connected_neurons.size(); ++j)
+		{
+			if (firing_indexes.count(j) ==1)
+			{
+				if(neurons[j].is_inhibitory())
+				{
+					remove +=(connected_neurons[j]).second;
+				}
+				else
+				{
+					add+=(connected_neurons[j]).second;
+				}
+			}
+		}
+		
+		intensity=thalamic + 0.5*add+remove;
+		neurons[i].input (intensity);
+		neurons[i].step();
+	}
+	return firing_indexes;
 }
 
 void Network::print_params(std::ostream *_out) {
